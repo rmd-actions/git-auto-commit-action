@@ -44,7 +44,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.head_ref }}
           # Value already defaults to true, but `persist-credentials` is required to push new commits to the repository.
@@ -136,6 +136,24 @@ The following is an extended example with all available options.
     # Optional. Creates a new tag and pushes it to remote without creating a commit.
     # Skips dirty check and changed files. Must be used in combination with `tag` and `tagging_message`.
     create_git_tag_only: false
+
+    # Optional. Suppress the security warning emitted when the action runs on a
+    # `pull_request_target` event. See the "Workflow should run in **base** repository"
+    # section below for context before disabling this warning.
+    disable_pull_request_target_trigger_warning: false
+
+    # Optional. Shell snippets to run around each git operation. Each hook
+    # is evaluated in the same bash process as the action — `set -eu` is
+    # in effect, the working directory is your repository, and all
+    # `INPUT_*` env vars are visible. A non-zero exit aborts the action.
+    before_add_hook: ''
+    after_add_hook: ''
+    before_commit_hook: ''
+    after_commit_hook: ''
+    before_tag_hook: ''
+    after_tag_hook: ''
+    before_push_hook: ''
+    after_push_hook: ''
 ```
 
 Please note that the Action depends on `bash`. If you're using the Action in a job in combination with a custom Docker container, make sure that `bash` is installed.
@@ -165,7 +183,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.head_ref }}
 
@@ -176,6 +194,8 @@ jobs:
       with:
         commit_message: Apply php-cs-fixer changes
 ```
+
+See [EXAMPLES.md](EXAMPLES.md) for more scenarios, including auto-formatting, dependency updates, generated docs, release tagging, drift checks, and GPG-signed commits.
 
 ## Inputs
 
@@ -208,6 +228,87 @@ You can use these outputs to trigger other Actions in your Workflow run based on
     run: echo "No Changes!"
 ```
 
+## Hooks
+
+git-auto-commit can run custom shell snippets around each git operation
+it performs. This is useful when you need to prepare or clean up the
+repository as part of the same step — for example, unshallowing a
+shallow clone right before the commit is staged.
+
+Eight optional hooks are available:
+
+| Hook | Runs |
+| ---- | ---- |
+| `before_add_hook` / `after_add_hook` | around `git add` |
+| `before_commit_hook` / `after_commit_hook` | around `git commit` |
+| `before_tag_hook` / `after_tag_hook` | around `git tag` (only when a tag is being created) |
+| `before_push_hook` / `after_push_hook` | around `git push` (skipped when `skip_push: true`) |
+
+Each hook is an inline shell snippet that runs in the same bash process
+as the action. The working directory is your repository, and all
+`INPUT_*` environment variables and standard GitHub Actions env vars are
+visible to the snippet.
+
+### Example
+
+```yaml
+- uses: stefanzweifel/git-auto-commit-action@v7
+  with:
+    before_add_hook: |
+      git fetch --unshallow
+```
+
+Multi-line snippets work via YAML's `|` block scalar:
+
+```yaml
+- uses: stefanzweifel/git-auto-commit-action@v7
+  with:
+    before_commit_hook: |
+      echo "About to commit at $(date)"
+      ./scripts/prepare-commit.sh
+```
+
+### Notes
+
+- A hook only runs when its underlying step actually runs. For example,
+  `before_add_hook`/`after_add_hook` are skipped when the working tree is clean,
+  and `before_push_hook`/`after_push_hook` are skipped when `skip_push: true`.
+- If a hook exits with a non-zero status, the action fails. Append
+  `|| true` to a snippet to ignore its failure.
+- Hooks share environment with the action, so they can read action
+  inputs (e.g. `$INPUT_COMMIT_MESSAGE`) and write to `$GITHUB_OUTPUT`.
+- Snippets run under `set -eu`. Referencing an unset variable aborts the
+  action; use `${VAR:-}` to default an optional variable to empty.
+
+### Security
+
+Hook snippets are evaluated as shell code in the same process as the
+action. Treat them as you would any `run:` step.
+
+> [!CAUTION]
+> **Do not combine hooks with the `pull_request_target` event when the
+> snippet references attacker-controlled GitHub context.** Fields like
+> `${{ github.event.pull_request.title }}`, `${{ github.event.pull_request.body }}`,
+> `${{ github.head_ref }}`, and commit messages from a fork are
+> interpolated into the snippet **before** bash sees it. A malicious PR
+> can inject shell commands that run on your runner with access to your
+> repository secrets. See the [`pull_request_target` section](#workflow-should-run-in-base-repository)
+> for the broader risk and [GitHub's script-injection guidance](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections).
+
+If you need values from PR-controlled context inside a hook, pass them
+via an intermediate env var rather than interpolating them directly into
+the snippet:
+
+```yaml
+- uses: stefanzweifel/git-auto-commit-action@v7
+  env:
+    PR_TITLE: ${{ github.event.pull_request.title }}
+  with:
+    before_commit_hook: |
+      # $PR_TITLE is read as data, not evaluated as code
+      echo "PR: $PR_TITLE"
+```
+
 ## Limitations & Gotchas
 
 The goal of this Action is to be "the Action for committing files for the 80% use case". Therefore, you might run into issues if your Workflow falls into the not supported 20% portion.
@@ -230,7 +331,7 @@ You must use `actions/checkout@v2` or later versions to check out the repository
 In non-`push` events, such as `pull_request`, make sure to specify the `ref` to check out:
 
 ```yaml
-- uses: actions/checkout@v5
+- uses: actions/checkout@v7
   with:
     ref: ${{ github.head_ref }}
 ```
@@ -248,7 +349,7 @@ You can change this by creating a new [Personal Access Token (PAT)](https://gith
 storing the token as a secret in your repository and then passing the new token to the [`actions/checkout`](https://github.com/actions/checkout#usage) Action step.
 
 ```yaml
-- uses: actions/checkout@v5
+- uses: actions/checkout@v7
   with:
     token: ${{ secrets.PAT }}
 ```
@@ -310,7 +411,7 @@ As git-auto-commit by default does not use **your** username and email when crea
 ```yml
 - name: "Import GPG key"
   id: import-gpg
-  uses: crazy-max/ghaction-import-gpg@v6
+  uses: crazy-max/ghaction-import-gpg@v7
   with:
     gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
     passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -354,10 +455,17 @@ However, there are a couple of ways to use this Action in Workflows that should 
 > [!CAUTION]
 > The following section explains how you can use git-auto-commit in combination with the `pull_request_target` trigger.
 > **Using `pull_request_target` in your workflows can lead to repository compromise as [mentioned](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) by GitHub's own security team. This means, that a bad actor could potentially leak/steal your GitHub Actions repository secrets.**
-> Please be aware of this risk when using `pull_request_target` in your workflows.
+> Please be aware of this risk when using `pull_request_target` in your workflows. See [GitHub's documentation](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target) for more information.
 >
 > If your workflow runs code-fixing tools, consider running the workflow on your default branch by listening to the `push` event or use a third-party tool like [autofix.ci](https://autofix.ci/).
 > We keep this documentation around, as many questions came in over the years, on how to use this action for public forks.
+>
+> To remind users of this risk, git-auto-commit emits a warning annotation whenever it detects it is running on a `pull_request_target` event.
+> If you have evaluated the risk and want to silence the warning, set the `disable_pull_request_target_trigger_warning` input to `true`.
+>
+> **Extra caution if you also use [hooks](#hooks):** hook snippets are evaluated as shell code. Interpolating attacker-controlled fields (PR title/body, branch name, fork commit messages, etc.) directly into a hook input on a `pull_request_target` workflow lets a malicious PR run arbitrary commands on your runner with access to your secrets. Pass such values through an `env:` block and reference them as `$VARS` inside the snippet — see the [Security note in the Hooks section](#security) for an example.
+>
+> **`actions/checkout` now blocks pull_request_target by default.** As of [v7](https://github.blog/changelog/2026-06-18-safer-pull_request_target-defaults-for-github-actions-checkout/), checkout refuses to fetch fork pull request code under `pull_request_target` when `repository:` or `ref:` resolves to the fork PR's repo, head, or merge commit. GitHub is backporting the enforcement to all supported major versions on July 16, 2026. To keep this example working, you may add `allow-unsafe-pr-checkout: true` to the checkout step, only after weighing the risks described above.
 
 The workflow below runs whenever a commit is pushed to the `main`-branch or when activity on a pull request happens, by listening to the [`pull_request_target`](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target) event.
 
@@ -382,7 +490,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         # Checkout the fork/head-repository and push changes to the fork.
         # If you skip this, the base repository will be checked out and changes
@@ -418,7 +526,7 @@ Finally, you have to use `push_options: '--force'` to overwrite the git history 
 The steps in your workflow might look like this:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
   with:
     # Fetch the last 2 commits instead of just 1. (Fetching just 1 commit would overwrite the whole history)
     fetch-depth: 2
