@@ -44,7 +44,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.head_ref }}
           # Value already defaults to true, but `persist-credentials` is required to push new commits to the repository.
@@ -183,7 +183,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.head_ref }}
 
@@ -331,7 +331,7 @@ You must use `actions/checkout@v2` or later versions to check out the repository
 In non-`push` events, such as `pull_request`, make sure to specify the `ref` to check out:
 
 ```yaml
-- uses: actions/checkout@v5
+- uses: actions/checkout@v7
   with:
     ref: ${{ github.head_ref }}
 ```
@@ -349,7 +349,7 @@ You can change this by creating a new [Personal Access Token (PAT)](https://gith
 storing the token as a secret in your repository and then passing the new token to the [`actions/checkout`](https://github.com/actions/checkout#usage) Action step.
 
 ```yaml
-- uses: actions/checkout@v5
+- uses: actions/checkout@v7
   with:
     token: ${{ secrets.PAT }}
 ```
@@ -411,7 +411,7 @@ As git-auto-commit by default does not use **your** username and email when crea
 ```yml
 - name: "Import GPG key"
   id: import-gpg
-  uses: crazy-max/ghaction-import-gpg@v6
+  uses: crazy-max/ghaction-import-gpg@v7
   with:
     gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
     passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -464,6 +464,8 @@ However, there are a couple of ways to use this Action in Workflows that should 
 > If you have evaluated the risk and want to silence the warning, set the `disable_pull_request_target_trigger_warning` input to `true`.
 >
 > **Extra caution if you also use [hooks](#hooks):** hook snippets are evaluated as shell code. Interpolating attacker-controlled fields (PR title/body, branch name, fork commit messages, etc.) directly into a hook input on a `pull_request_target` workflow lets a malicious PR run arbitrary commands on your runner with access to your secrets. Pass such values through an `env:` block and reference them as `$VARS` inside the snippet — see the [Security note in the Hooks section](#security) for an example.
+>
+> **`actions/checkout` now blocks pull_request_target by default.** As of [v7](https://github.blog/changelog/2026-06-18-safer-pull_request_target-defaults-for-github-actions-checkout/), checkout refuses to fetch fork pull request code under `pull_request_target` when `repository:` or `ref:` resolves to the fork PR's repo, head, or merge commit. GitHub is backporting the enforcement to all supported major versions on July 16, 2026. To keep this example working, you may add `allow-unsafe-pr-checkout: true` to the checkout step, only after weighing the risks described above.
 
 The workflow below runs whenever a commit is pushed to the `main`-branch or when activity on a pull request happens, by listening to the [`pull_request_target`](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target) event.
 
@@ -488,7 +490,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         # Checkout the fork/head-repository and push changes to the fork.
         # If you skip this, the base repository will be checked out and changes
@@ -524,7 +526,7 @@ Finally, you have to use `push_options: '--force'` to overwrite the git history 
 The steps in your workflow might look like this:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
   with:
     # Fetch the last 2 commits instead of just 1. (Fetching just 1 commit would overwrite the whole history)
     fetch-depth: 2
